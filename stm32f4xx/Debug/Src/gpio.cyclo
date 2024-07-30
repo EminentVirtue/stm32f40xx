@@ -1,0 +1,9 @@
+../Src/gpio.c:21:6:GPIO_Init	5
+../Src/gpio.c:70:6:GPIO_IRQConfig	19
+../Src/gpio.c:161:6:GPIO_DeInit	10
+../Src/gpio.c:212:6:GPIO_PeripheralClockControl	19
+../Src/gpio.c:252:6:GPIO_WriteToPin	2
+../Src/gpio.c:265:9:GPIO_ReadFromPin	1
+../Src/gpio.c:274:10:GPIO_ReadFromPort	1
+../Src/gpio.c:281:6:GPIO_WriteToPort	1
+../Src/gpio.c:286:6:GPIO_ISR	1

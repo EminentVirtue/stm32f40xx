@@ -1,0 +1,6 @@
+"./Src/gpio.o"
+"./Src/rcc.o"
+"./Src/spi.o"
+"./Src/spitest.o"
+"./Src/sysmem.o"
+"./Startup/startup_stm32f407vgtx.o"

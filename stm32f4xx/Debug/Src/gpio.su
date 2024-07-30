@@ -1,0 +1,9 @@
+../Src/gpio.c:21:6:GPIO_Init	32	static
+../Src/gpio.c:70:6:GPIO_IRQConfig	32	static
+../Src/gpio.c:161:6:GPIO_DeInit	24	static
+../Src/gpio.c:212:6:GPIO_PeripheralClockControl	16	static
+../Src/gpio.c:252:6:GPIO_WriteToPin	24	static
+../Src/gpio.c:265:9:GPIO_ReadFromPin	24	static
+../Src/gpio.c:274:10:GPIO_ReadFromPort	24	static
+../Src/gpio.c:281:6:GPIO_WriteToPort	16	static
+../Src/gpio.c:286:6:GPIO_ISR	16	static
