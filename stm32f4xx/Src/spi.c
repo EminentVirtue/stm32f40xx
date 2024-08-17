@@ -10,10 +10,11 @@
 #include <assert.h>
 #include <string.h>
 
-static u8 handle_err_interrupt(SPI_Handle_t *pHandle);
-static SPI_Status_t handle_tx_interrupt(SPI_Handle_t *pHandle);
-static bool isRxRequired(SPI_RegDef_t* pSPIx);
 
+static u8 handle_err_interrupt(SPI_Handle_t *pHandle);
+static void handle_tx_interrupt(SPI_Handle_t *pHandle);
+static bool isRxRequired(SPI_RegDef_t* pSPIx);
+static uint8_t SPI_CheckTransferArgument(SPI_Handle_t *pHandle, SPI_Transfer_t *transfer);
 
 /*********************************************************************
  * @fn      		  - SPI_PeripheralClockControl
@@ -143,17 +144,17 @@ void SPI_IRQ_Config(u8 IRQ_Number, u8 enabled)
 
 	if(IRQ_Number <= 31)
 	{
-		NVIC_Reg = NVIC_ICER0;
+		NVIC_Reg = (void*)NVIC_ISER0;
 		mod_amount = ++IRQ_Number;
 	}
 	if(IRQ_Number > 31 && IRQ_Number < 64 )
 	{
-		NVIC_Reg = NVIC_ICER1;
+		NVIC_Reg = (void*)NVIC_ISER1;
 		mod_amount = 32;
 	}
 	else if(IRQ_Number >= 64 && IRQ_Number < 96)
 	{
-		NVIC_Reg = NVIC_ICER2;
+		NVIC_Reg = (void*)NVIC_ISER2;
 		mod_amount = 64;
 	}
 	else
@@ -182,13 +183,47 @@ static u8 read_status_bit(SPI_RegDef_t *pSPIx, u8 status_bit)
 	return ( pSPIx->SR  >> status_bit) & 0x1;
 }
 
-static u8 read_control_bit(SPI_RegDef_t *pSPIx, u8 status_bit, u8 control_reg)
+SPI_Status_t SPI_ToggleCS(const SPI_Handle_t *pHandle)
 {
-	if(control_reg == SPI_CR1_READ)
-		return ((pSPIx->CR1 << status_bit) & 0x1);
-	else
-		return ((pSPIx->CR2 << status_bit) & 0x1);
+	/* First check the state of the pin, if it's already enabled,
+	 * don't do anything
+	 */
+	const GPIO_Handle_t *hChipSelect = pHandle->pChipSelect;
+
+	if(GPIO_ReadFromPin(hChipSelect->pGPIOPad, hChipSelect->config.pin_number)
+			== pHandle->chipSelectEnabledLevel)
+	{
+		return StatusEnabled;
+	}
+
+	/* Enable the chip select before the transaction has started */
+	if(pHandle->pChipSelect)
+	{
+		const GPIO_Handle_t *hChipSelect = pHandle->pChipSelect;
+		GPIO_WriteToPin(hChipSelect->pGPIOPad,hChipSelect->config.pin_number, pHandle->chipSelectEnabledLevel);
+	}
+
+	return Success;
 }
+
+
+/*********************************************************************
+ * @fn      		  - read_control_bit
+ * @brief             - Reads control bit from CR1 or CR2 register - for
+ 	 	 	 	 	 	internal use only
+
+ * @param[in]         - pSPIx - SPI peripheral
+ * @param[in]		  - controlBit - The bit of the address to read
+ * @param[in]		  - controlReg - The control register to read the
+ 	 	 	 	 	 	bit from
+
+ ********************************************************************/
+static u8 read_control_bit(SPI_RegDef_t *pSPIx, u8 controlBit, u8 controlReg)
+{
+	return controlReg == SPI_CR1_READ ? ((pSPIx->CR1 >> controlBit) & 0x1) :
+			((pSPIx->CR2 >> controlBit) & 0x1);
+}
+
 
 /*********************************************************************
  * @fn      		  - SPI_ConfigureCRC
@@ -333,9 +368,9 @@ static u8 bytes_per_frame(SPI_RegDef_t *pSPIx)
 SPI_Status_t SPI_MasterTransferBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t *pTransfer)
 {
 
+
 	assert(pTransfer != NULL);
 	assert(pHandle != NULL);
-	printf("does this print f work \n");
 
 	SPI_RegDef_t *pSPIx = pHandle->pSPIx;
 	assert(pSPIx != NULL);
@@ -343,6 +378,7 @@ SPI_Status_t SPI_MasterTransferBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t *p
 
 	/* First check to see if the SPI is in an error state. If it is,
 	 * then populate the error struct in the handle and return */
+
 	if(handle_err_interrupt(pHandle)){
 		return ErrorState;
 	}
@@ -360,7 +396,7 @@ SPI_Status_t SPI_MasterTransferBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t *p
 	}
 
 	/* Check to see if the transfer is permissible */
-	if(!SPI_CheckTransferArgument(pHandle, pTransfer, false))
+	if(!SPI_CheckTransferArgument(pHandle, pTransfer))
 	{
 		return InvalidArgument;
 	}
@@ -385,13 +421,16 @@ SPI_Status_t SPI_MasterTransferBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t *p
 	while( read_status_bit(pSPIx, SPISTAT_TXE) == TX_NOT_EMPTY);
 #endif
 
-	u8 bytesPerFrame = ((((pSPIx->CR1 >> SPICR1_BIT_DFF) & 0x1) * 8U) + 8U) / 8U;
-	size_t txSize = pTransfer->txSize;
-	u8 *txBuffer = pTransfer->txBuffer;
 
-	printf("hung 2\n");
+	u8 bytesPerFrame = ((((pSPIx->CR1 >> SPICR1_BIT_DFF) & 0x1) * 8U) + 8U) / 8U;
+	volatile size_t txSize = pTransfer->txSize;
+	volatile u8 *txBuffer = pTransfer->txBuffer;
+
+	SPI_ToggleCS(pHandle);
 
 	/* Load the data into the date register FIFO */
+
+	//for(u8 i = 0;i < 3; i++)
 	while(txSize > 0)
 	{
 
@@ -423,21 +462,17 @@ SPI_Status_t SPI_MasterTransferBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t *p
 	/* Restore the SPI's interrupt configuration */
 	if(interruptConfig > 0 )
 		SPI_EnableInterrupts(pSPIx, interruptConfig);
-	else
-		SPI_EnableInterrupts(pSPIx, SPI_IT_ALL);
+
 
 	return Success;
 }
 
-/*********************************************************************
- * @function      	  - SPI_MasterTransferNonBlocking
- * @brief             - Sets up the supplied SPI handle for TX, which
- * 						will then be completed upon the interrupt
+/**
+ * SPI_MasterTransferNonBlocking- Sets up the supplied SPI handle for TX, which will then be completed upon the interrupt
+ * @pHandle: the SPI handle
  *
- * @param[in]         - pHandle - the SPI handle
- * @param[in]		  - pTransfer - the transfer handle
- * @return			  - SPI_Status_t - the status of the transmission
- ********************************************************************/
+ * @pTransfer: he transfer handle
+*/
 SPI_Status_t SPI_MasterTransferNonBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t *pTransfer)
 {
 	/* First check the handle state, if it is already marked as transmitting,
@@ -458,7 +493,7 @@ SPI_Status_t SPI_MasterTransferNonBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t
 	SPI_DisableInterrupts(pHandle->pSPIx, SPI_IT_ALL);
 
 	/* Check to see if the transfer arguments are good */
-	if(!SPI_CheckTransferArgument(pHandle, pTransfer, false))
+	if(!SPI_CheckTransferArgument(pHandle, pTransfer))
 	{
 		return InvalidArgument;
 	}
@@ -467,8 +502,32 @@ SPI_Status_t SPI_MasterTransferNonBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t
 	pHandle->txSize = pTransfer->txSize;
 	pHandle->txBuffer = pTransfer->txBuffer;
 
-	/* Handle is setup, re-enable the interrupts  */
+	/* Handle is setup, re-enable the interrupts
+	 * The RXNE interrupt should be enabled in the case
+	 * that a response is received and handled in order to avoid an overrun
+	 * One particular instance that this can happen is if the user is in full duplex mode
+	 * but is transmitting only.
+	 */
+
+
+	/* In transmit-only mode, the OVR flag is set in the SR register
+			 * since the received data are never read. Therefore set OVR
+			 * interrupt only when rx buffer is available.
+			 */
+	SPI_FlushFifo(pHandle->pSPIx);
 	SPI_EnableInterrupts(pHandle->pSPIx, SPI_IT_ALL);
+
+	return Success;
+}
+
+SPI_Status_t SPI_MasterTransferDMA(SPI_Handle_t *pHandle, SPI_Transfer_t *pTransfer)
+{
+
+	return Success;
+}
+SPI_Status_t SPI_MasterReceiveDMA(SPI_Handle_t *pHandle, SPI_Transfer_t *pTransfer)
+{
+
 
 	return Success;
 }
@@ -515,6 +574,7 @@ void SPI_ReceiveBlocking(SPI_RegDef_t* pSPIx, SPI_Transfer_t* pTransfer)
 
 	if(!pTransfer->rxBuffer)
 	{
+		while(read_status_bit(pSPIx, RXNE_BITMASK) == RX_EMPTY);
 		SPI_FlushFifo(pSPIx);
 	}
 	else
@@ -565,7 +625,7 @@ void SPI_ReceiveNonBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t *pTransfer)
 }
 
 
-static SPI_Status_t handle_tx_interrupt(SPI_Handle_t *pHandle)
+static void handle_tx_interrupt(SPI_Handle_t *pHandle)
 {
 
 	/* First check to see if the transfer buffer length is 0, if so
@@ -573,22 +633,19 @@ static SPI_Status_t handle_tx_interrupt(SPI_Handle_t *pHandle)
 
 	if(pHandle->txSize <= 0)
 	{
-		memset(pHandle, 0, sizeof(SPI_Handle_t));
-		SPI_Close_Transmission(pHandle);
-
 		if(pHandle->txISRCallback)
 		{
+			/* Disable the TXE interrupt before executing the callback */
+			pHandle->pSPIx->CR2 &= ~(ENABLE << SPICR2_BIT_TXEIE);
 			pHandle->txISRCallback();
 		}
 
-		return Success;
+		SPI_CloseTransmission(pHandle);
 	}
 
 	/* The SPI peripheral is ready for a data transmission, load
 	 * the FIFO according to the DFF, update the handle and return */
 
-	/* Flush the FIFO */
-	SPI_FlushFifo(pHandle->pSPIx);
 
 	/* 16 bit DFF */
 	if(bytes_per_frame(pHandle->pSPIx) == 2)
@@ -600,32 +657,34 @@ static SPI_Status_t handle_tx_interrupt(SPI_Handle_t *pHandle)
 	}
 	else
 	{
+		printf("Loading buffer\n");
+		if(pHandle->txSize == 3)
+			SPI_ToggleCS(pHandle);
 		pHandle->pSPIx->DR = *pHandle->txBuffer;
 		pHandle->txBuffer++;
 		pHandle->txSize--;
 	}
 
-	/* If BIDI is enabled and RXONLY != 0, then a response from the slave over the
-	 * same line is to be expected. Therefore, we need to disable the TXE interrupt momentarily
-	 * and enable the RXNE interrupt in order to properly receive the response and avoid an overflow
-	 */
-
-	if(isBIDI(pHandle->pSPIx) && !isRxOnly(pHandle->pSPIx))
-	{
-		/* Only mark if there is more data to send */
-		if(pHandle->txSize > 0)
-			pHandle->txMarked = true;
-	}
-
-	return Success;
 }
 
 static void handle_rxne_interrupt(SPI_Handle_t *pHandle)
 {
+
+	/* If the RX buffer is null, then we're probably dealing with a
+	 * transfer only operation in full duplex mode, so just clear the
+	 * FIFO
+	 */
+
+	if(!pHandle->rxBuffer)
+	{
+		SPI_FlushFifo(pHandle->pSPIx);
+		return;
+	}
+
 	/* First check to see if the receive buffer length is 0, if so
 	 * blank the handle and execute callback if one */
 
-	if(pHandle->txSize <= 0)
+	if(pHandle->rxSize <= 0)
 	{
 		memset(pHandle, 0, sizeof(SPI_Handle_t));
 		SPI_Close_Reception(pHandle);
@@ -650,10 +709,6 @@ static void handle_rxne_interrupt(SPI_Handle_t *pHandle)
 		pHandle->rxSize--;
 		pHandle->rxBuffer++;
 	}
-
-	/* Before returning, check to see if TX is marked.
-	 * If it is, mask the RXNE interrupt and enable the TXE interrupt
-	 */
 
 }
 
@@ -709,7 +764,7 @@ void SPI_Close_Reception(SPI_Handle_t *pHandle)
  *					    is generated. This function only applies if the send method is thru
  *					    interrupts, with synchronous, this function call has no effect.
  ********************************************************************************************/
-void SPI_Close_Transmission(SPI_Handle_t *pHandle)
+void SPI_CloseTransmission(SPI_Handle_t *pHandle)
 {
 	pHandle->pSPIx->CR2 &= ~(ENABLE << SPICR2_BIT_TXEIE);
 
@@ -718,6 +773,15 @@ void SPI_Close_Transmission(SPI_Handle_t *pHandle)
 	pHandle->txState = NOT_BUSY;
 }
 
+/*********************************************************************************************
+ * @function      	  - SPI_IRQ_Handle
+ * @brief             - Responsible for handling interrupts generated by the SPI peripheral
+
+ * @param[in]         - SPI_Handle_t *pHandle - pointer to the SPI handle.
+ * @Note              - Should execute this function from within the redefined SPIx ISR
+ 	 	 	 	 	 	to properly handle receive,transfer and error interrupts from the
+ 	 	 	 	 	 	SPI peripheral
+ ********************************************************************************************/
 void SPI_IRQ_Handle(SPI_Handle_t *pHandle)
 {
 
@@ -745,7 +809,7 @@ void SPI_IRQ_Handle(SPI_Handle_t *pHandle)
 }
 
 
-u8 SPI_CheckTransferArgument(SPI_Handle_t *pHandle, SPI_Transfer_t *transfer, bool isDMA)
+u8 SPI_CheckTransferArgument(SPI_Handle_t *pHandle, SPI_Transfer_t *transfer)
 {
 	assert(transfer != NULL);
 
@@ -913,12 +977,6 @@ void SPI_Disable(SPI_RegDef_t* pSPIx)
 		 * the conditions of these two modes, the receive buffer should always be read.
 		 * In the case of a blocking transmission, a receive is always done for each byte transferred
 		 * and with a non blocking transfer, the Rx buffer is read with the interrupt */
-
-		u8 flag1 = read_status_bit(pSPIx, SPISTAT_TXE);
-		u8 flag2 = read_status_bit(pSPIx, SPISTAT_BIT_BSY);
-
-		printf("FLAG 1 %d\n", flag1);
-		printf("FLAG 2 %d\n", flag2);
 
 		while(true)
 		{

@@ -8,6 +8,7 @@
 
 
 #include "gpio.h"
+#include <stdio.h>
 
 /*
  * @fn 				- GPIO_Init
@@ -60,11 +61,6 @@ void GPIO_Init(GPIO_Handle_t *pHandle)
 	/* Configure pull-up/down register */
 	pGPIOx->PUPDR |= (pHandle->config.PUPD << pin_number);
 
-	/* If open drain is enabled, configure the initial state of the pin */
-	if(pHandle->config.mode_type == GPIO_OPEN_DRAIN)
-	{
-		GPIO_WriteToPin(pGPIOx, pin_number, pHandle->config.od_state_init);
-	}
 }
 
 void GPIO_IRQConfig(GPIO_Handle_t *pHandle,uint8_t IRQ_Number, uint8_t enabled)

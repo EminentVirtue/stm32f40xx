@@ -9,6 +9,7 @@
 #define SPI_H_
 
 #include "stm32f4xx.h"
+#include "gpio.h"
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -50,14 +51,15 @@
 #define SPISTAT_RXNE			0		/* Receive buffer not empty */
 
 /* SPI status bit masks */
-#define BUSY_BITMASK			0x40
-#define OVR_BITMASK				0x20
-#define MODF_BITMASK			0x10
-#define CRCERR_BITMASK			0x8
-#define UDR_BITMASK				0x4
-#define CHSIDE_BITMASK			0x3
-#define TXE_STATUS				(1 << SPISTAT_TXE)
-#define RXNE_BITMASK			0x0
+#define FRE_BITMASK				0x100	/* Frame format error bitmask */
+#define BUSY_BITMASK			0x80	/* Busy flag bitmask */
+#define OVR_BITMASK				0x40	/* Overrun flag bitmask */
+#define MODF_BITMASK			0x20	/* Mode fault bitmask */
+#define CRCERR_BITMASK			0x10	/* CRC error bitmask */
+#define UDR_BITMASK				0x8		/* Underrun flag bitmask */
+#define CHSIDE_BITMASK			0x4		/* Channel side bitmask */
+#define TXE_BITMASK				0x2		/* Transmit buffer empty bitmask */
+#define RXNE_BITMASK			0x1		/* Receive buffer not empty bitmask */
 
 /* SPI serial clock selection macros where PCLK_DIV_X is the SPI peripheral clock divided by X */
 #define PCLK_DIV_2				0
@@ -135,7 +137,8 @@ typedef enum {
 	BusyInRx,
 	FrequencyLowered,
 	FrequencyIncreased,
-	StatusUnknown
+	StatusUnknown,
+	StatusEnabled
 }SPI_Status_t;
 
 typedef enum {
@@ -165,8 +168,8 @@ typedef struct {
 }SPI_Err_Handle_t;
 
 typedef struct {
-	uint8_t *txBuffer;
-	uint8_t *rxBuffer;
+	volatile uint8_t *txBuffer;
+	volatile uint8_t *rxBuffer;
 
 	volatile size_t txSize;
 	volatile size_t rxSize;
@@ -190,17 +193,15 @@ typedef struct {
 }SPI_ClockStatus_t;
 
 typedef struct {
-	SPI_RegDef_t *pSPIx;	/* Holds the base address of the SPI peripheral */
-	SPI_Config_t config;	/* Holds the SPI Configuration */
+	SPI_RegDef_t *pSPIx;				/* Holds the base address of the SPI peripheral */
+	SPI_Config_t config;				/* Holds the SPI Configuration */
 
-	uint8_t rxState;		/* The state of the RX buffer */
-	uint8_t txState;		/* The state of the TX buffer */
-	uint8_t *rxBuffer;		/* To store the RX buffer address */
-	uint8_t *txBuffer;		/* To store the TX buffer address */
-	volatile size_t rxSize;			/* The length of the RX buffer */
-	volatile size_t txSize;			/* The length of the TX buffer */
-	bool txMarked;
-
+	uint8_t rxState;					/* The state of the RX buffer */
+	uint8_t txState;					/* The state of the TX buffer */
+	volatile uint8_t *rxBuffer;			/* To store the RX buffer address */
+	volatile uint8_t *txBuffer;			/* To store the TX buffer address */
+	volatile size_t rxSize;				/* The length of the RX buffer */
+	volatile size_t txSize;				/* The length of the TX buffer */
 
 	SPI_Err_Handle_t error_handle;		/* Stores any SPI error states in this item - this item is updated after every SPI
 										 * interrupt is generated - the status register is read */
@@ -208,6 +209,11 @@ typedef struct {
 	void (*rxISRCallback)();
 	void (*txISRCallback)();
 	void (*CRCErrCallback)();
+
+	GPIO_Handle_t *pChipSelect;
+	u8 chipSelectEnabledLevel;			/* The state which the chip select is considered enabled
+										 * If it is 1, then the chip select is considered enabled with a
+										 * high voltage, 0 means it is considered enabled when grounded */
 
 }SPI_Handle_t;
 
@@ -219,6 +225,8 @@ void SPI_Prepare(SPI_RegDef_t *pSPIx);
 void SPI_Toggle_SSI(SPI_RegDef_t *pSPIx, uint8_t enabled);
 SPI_Status_t SPI_MasterTransferBlocking(SPI_Handle_t *pSPIx, SPI_Transfer_t *transfer);
 SPI_Status_t SPI_MasterTransferNonBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t *pTransfer);
+SPI_Status_t SPI_MasterTransferDMA(SPI_Handle_t *pHandle, SPI_Transfer_t *pTransfer);
+SPI_Status_t SPI_MasterReceiveDMA(SPI_Handle_t *pHandle, SPI_Transfer_t *pTransfer);
 void SPI_ReceiveBlocking(SPI_RegDef_t *pSPIx, SPI_Transfer_t *pTransfer);
 void SPI_ReceiveNonBlocking(SPI_Handle_t *pHandle, SPI_Transfer_t *pTransfer);
 void SPI_IRQ_Config(uint8_t IRQ_Number, uint8_t enabled);
@@ -226,7 +234,7 @@ void SPI_Disable(SPI_RegDef_t* pSPIx);
 void SPI_SSOE_Configure(SPI_RegDef_t* pSPIx,uint8_t enabled);
 void SPI_IRQ_Handle(SPI_Handle_t *pHandle);
 void SPI_Close_Reception(SPI_Handle_t *pHandle);
-void SPI_Close_Transmission(SPI_Handle_t *pHandle);
+void SPI_CloseTransmission(SPI_Handle_t *pHandle);
 void SPI_TransferAbort(SPI_Handle_t *pHandle);
 void SPI_DisableInterrupts(SPI_RegDef_t *pSPIx, const uint8_t interruptConfig);
 void SPI_EnableInterrupts(SPI_RegDef_t *pSPIx, const uint8_t interruptConfig);
@@ -234,9 +242,9 @@ uint8_t SPI_InterruptConfig(SPI_RegDef_t *pSPIx);
 SPI_ClockStatus_t SPI_ChooseBestClockFrequency(SPI_RegDef_t *pSPIx, const unsigned char freqMHz);
 uint32_t SPI_SetDelayTimes(SPI_Handle_t *pHandle, uint32_t delayTimeInNanoSec, SPI_DelayType_t whichDelay, uint32_t srcClock_Hz);
 SPI_Status_t SPI_UpdateClockPolarity(SPI_Handle_t *pHandle, uint8_t CPOL, uint8_t CPHA);
-uint8_t SPI_CheckTransferArgument(SPI_Handle_t *pHandle, SPI_Transfer_t *transfer, bool isDMA);
 SPI_Mode_t SPI_GetCurrentMode(SPI_RegDef_t *pSPIx);
 SPI_Status_t SPI_ConfigureCRC(SPI_RegDef_t *pSPIx, bool shouldEnable, u16 polynomial);
+SPI_Status_t SPI_ToggleCS(const SPI_Handle_t *pHandle);
 
 //__weak void SPI_ISR();
 

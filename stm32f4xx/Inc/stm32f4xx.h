@@ -21,6 +21,20 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+#define BIT(n) (1 << n)
+#define BITMASK(end, start) (((1U << ((end) - (start) + 1)) - 1) << (start))
+#define EINVAL				1
+
+#define fbs(mask)(__builtin_ffs(mask) - 1)											/* First bit set */
+#define FIELD_PREP(MASK, VALUE) ((typeof(MASK))(VALUE) << fbs(MASK)) & (MASK)		/* Shift value to first bit set in mask */
+
+enum byte_def
+{
+	Byte = 8,
+	HalfWord = 16,
+	Word = 32
+};
+
 #define NOT_NULL(expr) expr != NULL
 #define RISING_EDGE			1
 #define FALLING_EDGE		2
@@ -361,12 +375,12 @@ typedef struct {
 #define SPI6_PCLK_DN		(RCC->APB2ENR &= ~1 << 21)
 
 /* SPI IRQ Macros */
-#define SPI1_IRQ_NO		35
-#define SPI2_IRQ_NO		36
-#define SPI3_IRQ_NO		51
-#define SPI4_IRQ_NO		84
-#define SPI5_IRQ_NO		85
-#define SPI6_IRQ_NO		86
+#define SPI1IRQ_NO		35
+#define SPI2IRQ_NO		36
+#define SPI3IRQ_NO		51
+#define SPI4IRQ_NO		84
+#define SPI5IRQ_NO		85
+#define SPI6IRQ_NO		86
 
 
 /* Flash Interface Register */
@@ -494,6 +508,74 @@ typedef struct {
 #define TIM13_RESET		do { RCC->APB1RSTR |= (ENABLE << 7); RCC->APB1RSTR &= ~(ENABLE << 7);}while(0)
 #define TIM14_RESET		do { RCC->APB1RSTR |= (ENABLE << 8); RCC->APB1RSTR &= ~(ENABLE << 8);}while(0)
 
+typedef struct {
+	volatile u32 LISR;
+	volatile u32 HISR;
+	volatile u32 LIFCR;
+	volatile u32 HIFCR;
+	volatile u32 S0CR;
+	volatile u32 S0NDTR;
+	volatile u32 S0PAR;
+	volatile u32 S0M0AR;
+	volatile u32 S0M1AR;
+	volatile u32 S0FCR;
+	volatile u32 S1CR;
+	volatile u32 S1NDTR;
+	volatile u32 S1PAR;
+	volatile u32 S1M0AR;
+	volatile u32 S1M1AR;
+	volatile u32 S1FCR;
+	volatile u32 S2CR;
+	volatile u32 S2NDTR;
+	volatile u32 S2PAR;
+	volatile u32 S2M0AR;
+	volatile u32 S2M1AR;
+	volatile u32 S2FCR;
+	volatile u32 S3CR;
+	volatile u32 S3NDTR;
+	volatile u32 S3PAR;
+	volatile u32 S3M0AR;
+	volatile u32 S3M1AR;
+	volatile u32 S3FCR;
+	volatile u32 S4CR;
+	volatile u32 S4NDTR;
+	volatile u32 S4PAR;
+	volatile u32 S4M0AR;
+	volatile u32 S4M1AR;
+	volatile u32 S4FCR;
+	volatile u32 S5CR;
+	volatile u32 S5NDTR;
+	volatile u32 S5PAR;
+	volatile u32 S5M0AR;
+	volatile u32 S5M1AR;
+	volatile u32 S5FCR;
+	volatile u32 S6CR;
+	volatile u32 S6NDTR;
+	volatile u32 S6PAR;
+	volatile u32 S6M0AR;
+	volatile u32 S6M1AR;
+	volatile u32 S6FCR;
+	volatile u32 S7CR;
+	volatile u32 S7NDTR;
+	volatile u32 S7PAR;
+	volatile u32 S7M0AR;
+	volatile u32 S7M1AR;
+	volatile u32 S7FCR;
+
+}DMA_RegDef_t;
+
+
+#define DMA1 ((DMA_RegDef_t*)(AHB1_BASE_ADDR + 0x6000))
+#define DMA2 ((DMA_RegDef_t*)(AHB1_BASE_ADDR + 0x6400))
+
+#define DMA1_CLK_EN		(RCC->AHB1ENR |= (1 << 21))
+#define DMA2_CLK_EN		(RCC->AHB1ENR |= (1 << 22))
+
+#define BIT_DMA1_CLK	(1 << 21)
+#define BIT_DMA2_CLK	(1 << 22)
+
+#define DMA1_CLK_DN		(RCC->AHB1ENR &= ~(1 << 21))
+#define DMA2_CLK_DN		(RCC->AHB2ENR &= ~(1 << 22))
 
 #define RTC ( (RTC_RegDef_t*)RTC_BASE_ADDR)
 
