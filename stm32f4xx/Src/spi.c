@@ -855,7 +855,7 @@ void spi_dma_config(spi_handle *handle,
  * The DMA's clock must be enabled before using this function
 */
 void spi_dma_chan_config(struct dma_channel *chan,
-						 u32 stream,
+		u32 stream,
 						 u32 channel,
 						 u32 flags)
 {
