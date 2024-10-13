@@ -856,8 +856,8 @@ void spi_dma_config(spi_handle *handle,
 */
 void spi_dma_chan_config(struct dma_channel *chan,
 		u32 stream,
-						 u32 channel,
-						 u32 flags)
+		u32 channel,
+		u32 flags)
 {
 	struct dma_chan_cfg chan_config;
 
